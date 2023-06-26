@@ -133,7 +133,7 @@ pub fn extract_txt(path: &PathBuf) -> Option<String> {
 }
 
 // idf -> Invesr Document Frequency
-pub fn calc_idf(term: &str, docs: Vec<Document>) -> f32 {
+pub fn calc_idf(term: &str, docs: &Vec<Document>) -> f32 {
 	let total_documents = docs.len() as f32;
 
 	let mut appears = 1;
@@ -143,8 +143,14 @@ pub fn calc_idf(term: &str, docs: Vec<Document>) -> f32 {
 			appears += 1;
 		}
 	}
+	println!("appears {appears}");
+	let semi = total_documents as f32 / (appears as f32);
+	println!("Smi: {semi}");
 
-	(total_documents / (appears as f32)).log10()
+	let res = semi.log10().max(1f32);
+	println!("Res: {res}");
+
+	res
 }
 
 pub fn extract(dir: ReadDir) -> Vec<Document> {
