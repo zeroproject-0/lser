@@ -1,4 +1,5 @@
 use pdf_extract::extract_text;
+use rusqlite::Connection;
 use std::collections::{HashMap, VecDeque};
 use std::fs::{read_dir, read_to_string, ReadDir};
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ pub struct Document {
 impl Document {
 	fn populate_term_freq(&mut self, text: &str) {
 		let mut words: Vec<String> = text
+			.to_uppercase()
 			.replace('\n', " ")
 			.split(' ')
 			.map(str::to_owned)
@@ -54,6 +56,45 @@ impl Document {
 		}
 
 		doc
+	}
+
+	pub fn save_sqlite(self) {
+		let conn = Connection::open("indexed.db").unwrap();
+		conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+		conn.execute("CREATE TABLE IF NOT EXISTS T_DOCUMENT (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, total_terms INTEGER)", []).unwrap();
+		conn.execute("CREATE TABLE IF NOT EXISTS T_WORD (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT UNIQUE, apparitions INTEGER)", []).unwrap();
+		conn.execute("CREATE TABLE IF NOT EXISTS T_DOC_WORD (id_doc INTEGER NOT NULL, id_word INTEGER NOT NULL, apparition INTEGER, tf INTEGER, FOREIGN KEY (id_doc) REFERENCES T_DOCUMENT (id), FOREIGN KEY (id_word) REFERENCES T_WORD (id))", []).unwrap();
+
+		let q_add_doc = "
+				INSERT INTO T_DOCUMENT (path, total_terms) VALUES (?1, ?2);
+		";
+
+		conn
+			.execute(
+				q_add_doc,
+				(self.path.display().to_string(), self.count_words),
+			)
+			.unwrap();
+
+		let last_doc_id = conn.last_insert_rowid().to_string();
+
+		let q_add_word = "
+            INSERT INTO T_WORD (word, apparitions) 
+            VALUES (?1, 1) 
+            ON CONFLICT(word) DO UPDATE SET apparitions = apparitions + 1
+		";
+
+		let q_add_d_w = "
+            INSERT INTO T_DOC_WORD (id_doc, id_word, apparition, tf)
+            VALUES (?1, (SELECT id FROM T_WORD tw WHERE tw.word = ?2), ?3, ?4)
+        ";
+
+		for (word, (n_terms, tf)) in self.term_freq {
+			conn.execute(q_add_word, [&word]).unwrap();
+			conn
+				.execute(q_add_d_w, (&last_doc_id, &word, n_terms, tf))
+				.unwrap();
+		}
 	}
 }
 
@@ -146,14 +187,7 @@ pub fn index(mut args: VecDeque<String>) {
 	match read_dir(path) {
 		Ok(items) => {
 			for doc in extract(items) {
-				let mut tf_sorted: Vec<(String, (i32, f32))> = doc.term_freq.into_iter().collect();
-				tf_sorted.sort_by(|(_, a), (_, b)| b.1.total_cmp(&a.1));
-
-				println!("{}", doc.path.display());
-
-				for (term, (freq, tf)) in tf_sorted.iter().take(30) {
-					println!("\t{term}: {freq}, {tf}");
-				}
+				doc.save_sqlite();
 			}
 		}
 		Err(_) => exit_error("The argument must be a directory"),

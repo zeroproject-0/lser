@@ -1,1 +1,1 @@
-# Local Search Engine write in rust 
+# LSER (Local Search Engine write in rust)
