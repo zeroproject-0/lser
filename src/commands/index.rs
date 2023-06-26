@@ -1,10 +1,14 @@
 use pdf_extract::extract_text;
-use rusqlite::Connection;
 use std::collections::{HashMap, VecDeque};
 use std::fs::{read_dir, read_to_string, ReadDir};
 use std::path::PathBuf;
 
 use crate::commons::exit_error;
+use crate::database::models::doc_word::DbDocWordToSave;
+use crate::database::models::document::DbDocument;
+use crate::database::models::word::DbWord;
+use crate::database::sqlite::Sqlite;
+use crate::database::DataBase;
 
 pub struct Document {
 	pub count_words: i32,
@@ -58,43 +62,40 @@ impl Document {
 		doc
 	}
 
-	pub fn save_sqlite(self) {
-		let conn = Connection::open("indexed.db").unwrap();
-		conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
-		conn.execute("CREATE TABLE IF NOT EXISTS T_DOCUMENT (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, total_terms INTEGER)", []).unwrap();
-		conn.execute("CREATE TABLE IF NOT EXISTS T_WORD (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT UNIQUE, apparitions INTEGER)", []).unwrap();
-		conn.execute("CREATE TABLE IF NOT EXISTS T_DOC_WORD (id_doc INTEGER NOT NULL, id_word INTEGER NOT NULL, apparition INTEGER, tf INTEGER, FOREIGN KEY (id_doc) REFERENCES T_DOCUMENT (id), FOREIGN KEY (id_word) REFERENCES T_WORD (id))", []).unwrap();
+	pub fn save_sqlite(self, db: &impl DataBase) {
+		let db_doc = DbDocument {
+			id: 0,
+			total_terms: self.count_words as usize,
+			path: self.path.display().to_string(),
+		};
 
-		let q_add_doc = "
-				INSERT INTO T_DOCUMENT (path, total_terms) VALUES (?1, ?2);
-		";
+		let last_doc_id = db.save(db_doc);
 
-		conn
-			.execute(
-				q_add_doc,
-				(self.path.display().to_string(), self.count_words),
-			)
-			.unwrap();
+		let words: Vec<DbWord> = self
+			.term_freq
+			.clone()
+			.into_keys()
+			.map(|w| DbWord {
+				id: 0,
+				word: w,
+				apparitions: 1,
+			})
+			.collect();
 
-		let last_doc_id = conn.last_insert_rowid().to_string();
+		db.save_all(
+			&words,
+			String::from("T_WORD"),
+			String::from("ON CONFLICT(word) DO UPDATE SET apparitions = apparitions + 1"),
+		);
 
-		let q_add_word = "
-            INSERT INTO T_WORD (word, apparitions) 
-            VALUES (?1, 1) 
-            ON CONFLICT(word) DO UPDATE SET apparitions = apparitions + 1
-		";
+		let doc_words: Vec<DbDocWordToSave> = self
+			.term_freq
+			.clone()
+			.into_iter()
+			.map(|(word, (a, tf))| (word, last_doc_id, a as usize, tf))
+			.collect();
 
-		let q_add_d_w = "
-            INSERT INTO T_DOC_WORD (id_doc, id_word, apparition, tf)
-            VALUES (?1, (SELECT id FROM T_WORD tw WHERE tw.word = ?2), ?3, ?4)
-        ";
-
-		for (word, (n_terms, tf)) in self.term_freq {
-			conn.execute(q_add_word, [&word]).unwrap();
-			conn
-				.execute(q_add_d_w, (&last_doc_id, &word, n_terms, tf))
-				.unwrap();
-		}
+		db.save_all_doc_word(&doc_words);
 	}
 }
 
@@ -132,7 +133,6 @@ pub fn extract_txt(path: &PathBuf) -> Option<String> {
 	}
 }
 
-// idf -> Invesr Document Frequency
 pub fn calc_idf(term: &str, docs: &Vec<Document>) -> f32 {
 	let total_documents = docs.len() as f32;
 
@@ -153,14 +153,14 @@ pub fn calc_idf(term: &str, docs: &Vec<Document>) -> f32 {
 	res
 }
 
-pub fn extract(dir: ReadDir) -> Vec<Document> {
+pub fn extract(dir: ReadDir, db: &impl DataBase) -> Vec<Document> {
 	let mut docs: Vec<Document> = Vec::new();
 
 	for item in dir {
 		let item = item.unwrap().path();
 
 		if item.is_dir() {
-			extract(read_dir(&item).unwrap());
+			extract(read_dir(&item).unwrap(), db);
 		} else {
 			if is_valid_file(&item) {
 				let content = match item.extension().unwrap().to_str().unwrap() {
@@ -189,11 +189,14 @@ pub fn extract(dir: ReadDir) -> Vec<Document> {
 
 pub fn index(mut args: VecDeque<String>) {
 	let path = args.pop_front().unwrap_or(String::from("files"));
+	let db_name = args.pop_front().unwrap_or(String::from("indexed.db"));
+
+	let db = Sqlite::new(db_name);
 
 	match read_dir(path) {
 		Ok(items) => {
-			for doc in extract(items) {
-				doc.save_sqlite();
+			for doc in extract(items, &db) {
+				doc.save_sqlite(&db);
 			}
 		}
 		Err(_) => exit_error("The argument must be a directory"),
