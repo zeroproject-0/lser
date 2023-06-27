@@ -1,0 +1,29 @@
+html {
+  box-sizing: border-box;
+}
+
+*, *::after, *::before {
+  box-sizing: inherit;
+}
+
+body {
+  margin: 0;
+  background-color: #232323;
+  color: whitesmoke;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width:100vw;
+  width:100dvw;
+  display: grid;
+  justify-content: center;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  justify-content: start;
+  align-items: center;
+
+  min-width: 100%;
+  max-width: 1200px;
+}

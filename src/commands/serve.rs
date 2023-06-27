@@ -5,17 +5,13 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
-use tiny_http::{Header, Request, Response, Server};
+use tiny_http::{Header, Method, Request, Response, Server};
 
 use super::index::Document;
 
-fn serve_404(req: Request, _: &Connection) {
+fn serve_404(req: Request) {
 	let page = File::open("./static/404.html").unwrap();
 	let mut response = Response::from_file(page);
-
-	response.add_header(
-		Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap(),
-	);
 
 	response = response.with_status_code(404);
 	req.respond(response).unwrap();
@@ -27,7 +23,6 @@ fn serve_index(req: Request, db: &Connection, docs: &Vec<Document>) {
 		Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap(),
 	);
 
-	//let query = "the intelligence artificial".to_uppercase();
 	let query = "What is artificial intelligence".to_uppercase();
 
 	let query = query.split(' ').into_iter().collect::<Vec<&str>>();
@@ -70,6 +65,58 @@ struct DbDocWord {
 	word: String,
 	apparition: i32,
 	tf: f32,
+}
+
+fn serve_file(req: Request) {
+	let uri = req.url().to_string();
+	let mut uri: VecDeque<&str> = uri.split("/").into_iter().skip(1).collect();
+
+	let file: File;
+	let content_type: &[u8];
+
+	let file_type = uri.pop_front().unwrap();
+	let file_type = file_type.to_lowercase();
+
+	// TODO change routes for works on all platforms
+	match file_type.as_str() {
+		"css" => {
+			let path = format!(
+				"./static/css/{}",
+				uri.into_iter().collect::<Vec<_>>().join("/")
+			);
+
+			match File::open(&path) {
+				Ok(f) => {
+					content_type = &b"text/css"[..];
+					file = f;
+				}
+				Err(_) => {
+					println!("Can't Open file {path}");
+					return serve_404(req);
+				}
+			};
+		}
+		"js" => {
+			let path = format!(
+				"./static/js/{}",
+				uri.into_iter().collect::<Vec<_>>().join("/")
+			);
+
+			if let Ok(f) = File::open(&path) {
+				content_type = &b"application/javascript"[..];
+				file = f;
+			} else {
+				println!("Can't Open file {path}");
+				return serve_404(req);
+			}
+		}
+		_ => return serve_404(req),
+	}
+
+	let mut res = Response::from_file(file);
+	res.add_header(Header::from_bytes(&b"Content-Type"[..], content_type).unwrap());
+
+	req.respond(res).unwrap();
 }
 
 fn start_server(address: SocketAddrV4) {
@@ -124,15 +171,14 @@ fn start_server(address: SocketAddrV4) {
 	match server {
 		Ok(server) => {
 			for req in server.incoming_requests() {
-				println!("{}", req.url().to_string());
-				match (req.method().as_str(), req.url()) {
-					("GET", "/") => serve_index(req, &db, &docs),
+				println!("{}", req.url());
+				match (req.method(), req.url()) {
+					(Method::Get, "/") => serve_index(req, &db, &docs),
+					(Method::Get, ref r) if r.starts_with("/css/") && r.len() > 5 => serve_file(req),
+					(Method::Get, ref r) if r.starts_with("/js/") && r.len() > 4 => serve_file(req),
 					//("POST", "/search") => post_handler(&req),
-					_ => serve_404(req, &db),
+					_ => serve_404(req),
 				}
-
-				//let response = Response::from_string("hello world");
-				// req.respond(response).unwrap();
 			}
 		}
 		Err(e) => exit_error(&format!("Can't start server: {}", e)),
@@ -171,6 +217,6 @@ pub fn serve(mut args: VecDeque<String>) {
 	};
 
 	let address = SocketAddrV4::new(ip_v4, port);
-	println!("Starting server on {}", address);
+	println!("Starting server on http://{}/", address);
 	start_server(address)
 }
