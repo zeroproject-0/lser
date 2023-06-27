@@ -29,7 +29,8 @@ function create_result_card({ doc }) {
   div.classList.add('results__item');
   const a = document.createElement('a');
   a.classList.add('results__link');
-  a.setAttribute('href', doc);
+  a.setAttribute('href', `file/${doc}`);
+  a.setAttribute('target', '_blank');
   a.textContent = doc.split('/').at(-1);
   div.appendChild(a);
   $results.appendChild(div);

@@ -82,6 +82,26 @@ fn serve_file(req: Request) {
 				return serve_404(req);
 			}
 		}
+
+		"file" => {
+			let path = uri.into_iter().collect::<Vec<_>>().join("/");
+
+			let file_ext = path.split(".").collect::<Vec<&str>>();
+			let file_ext = file_ext[file_ext.len() - 1];
+
+			content_type = match file_ext {
+				"pdf" => &b"application/pdf"[..],
+				"txt" => &b"text/plain"[..],
+				_ => return serve_404(req),
+			};
+
+			if let Ok(f) = File::open(&path) {
+				file = f;
+			} else {
+				println!("Can't Open file {path}");
+				return serve_404(req);
+			}
+		}
 		_ => return serve_404(req),
 	}
 
@@ -100,8 +120,6 @@ fn handle_search(mut req: Request, db: &Connection, docs: &Vec<Document>) {
 
 	let body =
 		str::from_utf8(&buf).expect(format!("Error trying to parse body {}", req.url()).as_str());
-
-	// let lexer = Lexer::new(&body.chars().collect::<Vec<char>>());
 
 	let total_documents = docs.len();
 	let mut results: HashMap<&str, f32> = HashMap::new();
@@ -195,6 +213,7 @@ fn start_server(address: SocketAddrV4) {
 					(Method::Get, "/") => serve_index(req),
 					(Method::Get, ref r) if r.starts_with("/css/") && r.len() > 5 => serve_file(req),
 					(Method::Get, ref r) if r.starts_with("/js/") && r.len() > 4 => serve_file(req),
+					(Method::Get, ref r) if r.starts_with("/file/") && r.len() > 6 => serve_file(req),
 					(Method::Post, "/search") => handle_search(req, &db, &docs),
 					_ => serve_404(req),
 				}
