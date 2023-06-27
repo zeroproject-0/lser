@@ -85,7 +85,7 @@ fn serve_file(req: Request) {
 
 		"file" => {
 			let path = uri.into_iter().collect::<Vec<_>>().join("/");
-
+			let path = path.replace("%20", " ");
 			let file_ext = path.split(".").collect::<Vec<&str>>();
 			let file_ext = file_ext[file_ext.len() - 1];
 
