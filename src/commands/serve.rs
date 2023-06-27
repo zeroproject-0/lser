@@ -1,10 +1,11 @@
-use crate::commons::exit_error;
+use crate::commons::{exit_error, Lexer};
 
 use rusqlite::Connection;
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
+use std::str;
 use tiny_http::{Header, Method, Request, Response, Server};
 
 use super::index::Document;
@@ -17,40 +18,11 @@ fn serve_404(req: Request) {
 	req.respond(response).unwrap();
 }
 
-fn serve_index(req: Request, db: &Connection, docs: &Vec<Document>) {
+fn serve_index(req: Request) {
 	let mut response = Response::from_file(File::open("./static/index.html").unwrap());
 	response.add_header(
 		Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap(),
 	);
-
-	let query = "What is artificial intelligence".to_uppercase();
-
-	let query = query.split(' ').into_iter().collect::<Vec<&str>>();
-
-	let total_documents = docs.len();
-
-	let mut results: HashMap<&str, f32> = HashMap::new();
-
-	let q_total_apparitions = "
-        SELECT apparitions FROM T_WORD WHERE word=?1
-    ";
-
-	for doc in docs {
-		for q in query.to_owned() {
-			let number_apparitions: i32 = db
-				.query_row(q_total_apparitions, [q], |r| r.get(0))
-				.unwrap();
-
-			if let Some(term) = doc.term_freq.get(q) {
-				let tf_idf = term.1 * (total_documents as f32 / number_apparitions as f32).log10();
-				results.insert(doc.path.to_str().unwrap(), tf_idf);
-			}
-		}
-	}
-
-	for (k, tf_idf) in results.iter() {
-		println!("K: {k} => tf_idf: {tf_idf}");
-	}
 
 	req.respond(response).unwrap();
 }
@@ -119,6 +91,53 @@ fn serve_file(req: Request) {
 	req.respond(res).unwrap();
 }
 
+fn handle_search(mut req: Request, db: &Connection, docs: &Vec<Document>) {
+	let mut buf: Vec<u8> = Vec::new();
+	req
+		.as_reader()
+		.read_to_end(&mut buf)
+		.expect(format!("Error trying to parse body {}", req.url()).as_str());
+
+	let body =
+		str::from_utf8(&buf).expect(format!("Error trying to parse body {}", req.url()).as_str());
+
+	// let lexer = Lexer::new(&body.chars().collect::<Vec<char>>());
+
+	let total_documents = docs.len();
+	let mut results: HashMap<&str, f32> = HashMap::new();
+	let q_total_apparitions = "
+        SELECT apparitions FROM T_WORD WHERE word=?1
+    ";
+
+	for doc in docs {
+		for q in Lexer::new(&body.chars().collect::<Vec<char>>()) {
+			let number_apparitions: i32 = db
+				.query_row(q_total_apparitions, [&q], |r| r.get(0))
+				.unwrap_or(0);
+
+			if let Some(term) = doc.term_freq.get(q.as_str()) {
+				let tf_idf = term.1 * (total_documents as f32 / number_apparitions as f32).log10();
+				results.insert(doc.path.to_str().unwrap(), tf_idf);
+			}
+		}
+	}
+
+	let mut res_vec: Vec<String> = Vec::new();
+	for (k, tf_idf) in results.iter() {
+		let mut res = "".to_owned();
+		res.push_str("{");
+		res.push_str(&format!("\"doc\": \"{k}\", \"tf_idf\": \"{tf_idf}\""));
+		res.push_str("}");
+		res_vec.push(res);
+		//println!("K: {k} => tf_idf: {tf_idf}");
+	}
+
+	let res_txt = format!("[{}]", res_vec.join(","));
+
+	let res = Response::from_string(res_txt).with_status_code(200);
+	req.respond(res).unwrap();
+}
+
 fn start_server(address: SocketAddrV4) {
 	let server = Server::http(address);
 	let db = Connection::open("indexed.db").unwrap();
@@ -173,10 +192,10 @@ fn start_server(address: SocketAddrV4) {
 			for req in server.incoming_requests() {
 				println!("{}", req.url());
 				match (req.method(), req.url()) {
-					(Method::Get, "/") => serve_index(req, &db, &docs),
+					(Method::Get, "/") => serve_index(req),
 					(Method::Get, ref r) if r.starts_with("/css/") && r.len() > 5 => serve_file(req),
 					(Method::Get, ref r) if r.starts_with("/js/") && r.len() > 4 => serve_file(req),
-					//("POST", "/search") => post_handler(&req),
+					(Method::Post, "/search") => handle_search(req, &db, &docs),
 					_ => serve_404(req),
 				}
 			}

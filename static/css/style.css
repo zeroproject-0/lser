@@ -27,3 +27,20 @@ main {
   min-width: 100%;
   max-width: 1200px;
 }
+
+.results {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin-top: 1rem;
+}
+
+.results__item {
+  padding: .3rem 0;
+  width: 100%;
+}
+
+.results__link {
+  text-decoration: none;
+  color: orange;
+}
