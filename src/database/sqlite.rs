@@ -39,7 +39,6 @@ impl Sqlite {
 impl DataBase for Sqlite {
 	fn save<T: ToQuery>(&self, obj: T) -> usize {
 		let q = obj.to_query();
-		println!("query: {q}");
 
 		self.connection.execute(q.as_str(), []).unwrap();
 

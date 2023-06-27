@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{read_dir, read_to_string, ReadDir};
 use std::path::PathBuf;
 
-use crate::commons::exit_error;
+use crate::commons::{exit_error, Lexer};
 use crate::database::models::doc_word::DbDocWordToSave;
 use crate::database::models::document::DbDocument;
 use crate::database::models::word::DbWord;
@@ -18,19 +18,12 @@ pub struct Document {
 
 impl Document {
 	fn populate_term_freq(&mut self, text: &str) {
-		let mut words: Vec<String> = text
-			.to_uppercase()
-			.replace('\n', " ")
-			.split(' ')
-			.map(str::to_owned)
-			.collect();
+		let chars: Vec<char> = text.chars().collect();
 
-		for word in &mut words {
-			if word.is_empty() {
-				continue;
-			}
+		let lexer = Lexer::new(&chars);
 
-			match self.term_freq.get_mut(word) {
+		for word in lexer {
+			match self.term_freq.get_mut(&word) {
 				Some(value) => value.0 += 1,
 				None => {
 					self.term_freq.insert(word.to_owned(), (1, 0.0));
@@ -62,7 +55,7 @@ impl Document {
 		doc
 	}
 
-	pub fn save_sqlite(self, db: &impl DataBase) {
+	pub fn save(self, db: &impl DataBase) {
 		let db_doc = DbDocument {
 			id: 0,
 			total_terms: self.count_words as usize,
@@ -143,24 +136,21 @@ pub fn calc_idf(term: &str, docs: &Vec<Document>) -> f32 {
 			appears += 1;
 		}
 	}
-	println!("appears {appears}");
 	let semi = total_documents as f32 / (appears as f32);
-	println!("Smi: {semi}");
 
 	let res = semi.log10().max(1f32);
-	println!("Res: {res}");
 
 	res
 }
 
-pub fn extract(dir: ReadDir, db: &impl DataBase) -> Vec<Document> {
+pub fn extract(dir: ReadDir) -> Vec<Document> {
 	let mut docs: Vec<Document> = Vec::new();
 
 	for item in dir {
 		let item = item.unwrap().path();
 
 		if item.is_dir() {
-			extract(read_dir(&item).unwrap(), db);
+			extract(read_dir(&item).unwrap());
 		} else {
 			if is_valid_file(&item) {
 				let content = match item.extension().unwrap().to_str().unwrap() {
@@ -195,8 +185,11 @@ pub fn index(mut args: VecDeque<String>) {
 
 	match read_dir(path) {
 		Ok(items) => {
-			for doc in extract(items, &db) {
-				doc.save_sqlite(&db);
+			for doc in extract(items) {
+				// for (word, (freq, tf)) in doc.term_freq.clone().iter() {
+				// 	println!("{} => {} - {} - {}", doc.path.display(), word, freq, tf);
+				// }
+				doc.save(&db);
 			}
 		}
 		Err(_) => exit_error("The argument must be a directory"),
