@@ -5,10 +5,44 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
-use std::str;
+use std::str::{self, from_utf8};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 use super::index::Document;
+
+fn decode_url(url: &str) -> String {
+    let bytes = url.bytes().into_iter().collect::<Vec<u8>>();
+    let mut output = Vec::with_capacity(bytes.len());
+
+    let mut i = 0;
+    while i < bytes.len()  {
+        match bytes[i] {
+            b'%' => {
+                if i + 2 < bytes.len() {
+                    let hex = &bytes[i + 1..i + 3];
+                    if let Ok(byte) = u8::from_str_radix(from_utf8(hex).unwrap(), 16) {
+                        output.push(byte);
+                        i += 3;
+                        continue;
+                    }
+                }
+
+                output.push(b'%'); 
+                i += 1;
+            },
+            b'+' => {
+                output.push(b' ');
+                i += 1;
+            },
+            _ => {
+                output.push(bytes[i]); 
+                i += 1;
+            },
+        }
+    }
+
+    String::from_utf8(output).unwrap()
+}
 
 fn serve_404(req: Request) {
 	let page = File::open("./static/404.html").unwrap();
@@ -40,7 +74,7 @@ struct DbDocWord {
 }
 
 fn serve_file(req: Request) {
-	let uri = req.url().to_string();
+	let uri = decode_url(req.url());
 	let mut uri: VecDeque<&str> = uri.split("/").into_iter().skip(1).collect();
 
 	let file: File;
@@ -85,7 +119,6 @@ fn serve_file(req: Request) {
 
 		"file" => {
 			let path = uri.into_iter().collect::<Vec<_>>().join("/");
-			let path = path.replace("%20", " ");
 			let file_ext = path.split(".").collect::<Vec<&str>>();
 			let file_ext = file_ext[file_ext.len() - 1];
 
@@ -208,8 +241,9 @@ fn start_server(address: SocketAddrV4) {
 	match server {
 		Ok(server) => {
 			for req in server.incoming_requests() {
-				println!("{}", req.url());
-				match (req.method(), req.url()) {
+                let decoded_url = decode_url(req.url());
+				println!("{}", decoded_url);
+				match (req.method(), decoded_url.as_str()) {
 					(Method::Get, "/") => serve_index(req),
 					(Method::Get, ref r) if r.starts_with("/css/") && r.len() > 5 => serve_file(req),
 					(Method::Get, ref r) if r.starts_with("/js/") && r.len() > 4 => serve_file(req),
