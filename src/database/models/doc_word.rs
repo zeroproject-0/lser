@@ -1,6 +1,13 @@
 use super::ToQuery;
 
-pub type DbDocWordToSave = (String, usize, usize, f32);
+#[derive(Clone)]
+pub struct DbDocWordToSave {
+	pub word: String,
+	pub id_doc: usize,
+	pub apparition: usize,
+	pub tf: f32,
+}
+// pub type DbDocWordToSave = (String, usize, usize, f32);
 
 pub struct DbDocWord {
 	pub id: usize,

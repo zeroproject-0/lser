@@ -7,6 +7,5 @@ edition = "2021"
 
 [dependencies]
 tiny_http = "0.12"
-pdf-extract = "0.6.5"
-lopdf = "0.29"
 rusqlite = { version = "0.29.0", features = ["bundled"] }
+poppler-rs = "0.21.0"

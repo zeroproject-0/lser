@@ -20,6 +20,18 @@ impl Sqlite {
 	}
 
 	fn create_schema(&self) {
+		/*self
+		.connection
+		.execute("PRAGMA journal_mode = OFF", [])
+		.unwrap();*/
+		/*self
+		.connection
+		.execute("PRAGMA locking_mode = EXCLUSIVE", [])
+		.unwrap();*/
+		self
+			.connection
+			.execute("PRAGMA temp_store = MEMORY", [])
+			.unwrap();
 		self
 			.connection
 			.execute("PRAGMA foreign_keys = ON", [])
@@ -61,23 +73,31 @@ impl DataBase for Sqlite {
 		self.connection.execute(q.as_str(), []).unwrap();
 	}
 
-	fn save_all_doc_word(&self, objs: &Vec<super::models::doc_word::DbDocWordToSave>) {
-		let values: Vec<String> = objs
-			.iter()
-			.map(|o| {
-				format!(
-					"({}, (SELECT id FROM T_WORD tw WHERE tw.word = \"{}\"), {}, {})",
-					o.1, o.0, o.2, o.3
-				)
-			})
-			.collect();
+	fn save_all_doc_word(&mut self, objs: &Vec<super::models::doc_word::DbDocWordToSave>) {
+		let batch_size = 100;
+		let stmt = self.connection.transaction().unwrap();
 
-		let q = format!(
-			"INSERT INTO T_DOC_WORD (id_doc, id_word, apparition, tf)
-            VALUES {}",
-			values.join(",")
-		);
+		for i in 0..(objs.len() / batch_size) {
+			let mut q = "INSERT INTO T_DOC_WORD VALUES ".to_owned();
+			for j in 0..batch_size {
+				let idx = j + (i * batch_size);
+				let o = objs[idx].clone();
+				q.push_str(&format!(
+					"({}, (SELECT id FROM T_WORD tw WHERE tw.word LIKE \"{}%\" LIMIT 1), {}, {}),",
+					o.id_doc, o.word, o.apparition, o.tf
+				));
 
-		self.connection.execute(&q, []).unwrap();
+				if idx + 1 >= objs.len() {
+					break;
+				}
+			}
+
+			q.pop();
+			q.push_str(";");
+
+			stmt.execute_batch(&q).unwrap();
+		}
+
+		stmt.commit().expect("Error in commit");
 	}
 }

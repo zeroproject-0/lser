@@ -1,6 +1,5 @@
-use pdf_extract::extract_text;
 use std::collections::{HashMap, VecDeque};
-use std::fs::{read_dir, read_to_string, ReadDir};
+use std::fs::{read_dir, read_to_string, File, ReadDir};
 use std::path::PathBuf;
 
 use crate::commons::{exit_error, Lexer};
@@ -55,7 +54,7 @@ impl Document {
 		doc
 	}
 
-	pub fn save(self, db: &impl DataBase) {
+	pub fn save(self, db: &mut impl DataBase) {
 		let db_doc = DbDocument {
 			id: 0,
 			total_terms: self.count_words as usize,
@@ -63,6 +62,10 @@ impl Document {
 		};
 
 		let last_doc_id = db.save(db_doc);
+
+		// println!("");
+		// println!("Save: {} -> {}", last_doc_id, self.path.display());
+		// println!("");
 
 		let words: Vec<DbWord> = self
 			.term_freq
@@ -75,6 +78,10 @@ impl Document {
 			})
 			.collect();
 
+		// println!("");
+		// println!("Words: {}", words.len());
+		// println!("");
+
 		db.save_all(
 			&words,
 			String::from("T_WORD"),
@@ -85,7 +92,12 @@ impl Document {
 			.term_freq
 			.clone()
 			.into_iter()
-			.map(|(word, (a, tf))| (word, last_doc_id, a as usize, tf))
+			.map(|(word, (a, tf))| DbDocWordToSave {
+				word,
+				id_doc: last_doc_id,
+				apparition: a as usize,
+				tf,
+			})
 			.collect();
 
 		db.save_all_doc_word(&doc_words);
@@ -98,6 +110,10 @@ pub fn index_from_str(text: &str, path: &PathBuf) -> Option<Document> {
 	if doc.count_words == 0 {
 		return None;
 	}
+
+	// println!("");
+	// println!("Document words: {}", doc.count_words);
+	// println!("");
 
 	Some(doc)
 }
@@ -113,9 +129,42 @@ pub fn is_valid_file(path: &PathBuf) -> bool {
 }
 
 pub fn extract_pdf(path: &PathBuf) -> Option<String> {
-	match extract_text(path) {
-		Ok(text) => Some(text),
-		Err(_) => None,
+	use poppler::Document;
+	use std::io::Read;
+
+	let mut content = Vec::new();
+	File::open(path)
+		.and_then(|mut file| file.read_to_end(&mut content))
+		.map_err(|err| {
+			eprintln!(
+				"ERROR: could not read file {file_path}: {err}",
+				file_path = path.display()
+			);
+		})
+		.expect("Error trying to read file");
+
+	let pdf = Document::from_data(&content, None).unwrap();
+
+	let mut result = String::new();
+
+	let n = pdf.n_pages();
+	for i in 0..n {
+		let page = pdf.page(i).expect(&format!(
+			"{i} is within the bounds of the range of the page"
+		));
+		if let Some(content) = page.text() {
+			result.push_str(content.as_str());
+			result.push(' ');
+		}
+	}
+
+	// println!("");
+	// println!("Content length: {}", result.len());
+	// println!("");
+	if result.is_empty() {
+		None
+	} else {
+		Some(result)
 	}
 }
 
@@ -143,14 +192,13 @@ pub fn calc_idf(term: &str, docs: &Vec<Document>) -> f32 {
 	res
 }
 
-pub fn extract(dir: ReadDir) -> Vec<Document> {
-	let mut docs: Vec<Document> = Vec::new();
-
+pub fn extract(dir: ReadDir, docs: &mut Vec<Document>) {
 	for item in dir {
 		let item = item.unwrap().path();
+		print!("Try: {} ", item.display());
 
 		if item.is_dir() {
-			extract(read_dir(&item).unwrap());
+			extract(read_dir(&item).unwrap(), docs);
 		} else {
 			if is_valid_file(&item) {
 				let content = match item.extension().unwrap().to_str().unwrap() {
@@ -161,35 +209,36 @@ pub fn extract(dir: ReadDir) -> Vec<Document> {
 
 				let doc: Option<Document> = match content {
 					Some(content) => index_from_str(&content, &item),
-					None => {
-						println!("Can't get content from: {}", item.display());
-						None
-					}
+					None => None,
 				};
 
 				if let Some(doc) = doc {
+					println!("success!!!");
 					docs.push(doc);
+				} else {
+					println!("Can't get content from: {}", item.display());
 				}
 			};
 		}
 	}
-
-	return docs;
 }
 
 pub fn index(mut args: VecDeque<String>) {
 	let path = args.pop_front().unwrap_or(String::from("files"));
 	let db_name = args.pop_front().unwrap_or(String::from("indexed.db"));
 
-	let db = Sqlite::new(db_name);
+	let mut db = Sqlite::new(db_name);
+
+	let mut docs: Vec<Document> = Vec::new();
 
 	match read_dir(path) {
 		Ok(items) => {
-			for doc in extract(items) {
+			extract(items, &mut docs);
+			for doc in docs {
 				// for (word, (freq, tf)) in doc.term_freq.clone().iter() {
 				// 	println!("{} => {} - {} - {}", doc.path.display(), word, freq, tf);
 				// }
-				doc.save(&db);
+				doc.save(&mut db);
 			}
 		}
 		Err(_) => exit_error("The argument must be a directory"),
