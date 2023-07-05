@@ -173,6 +173,9 @@ fn handle_search(mut req: Request, db: &Connection, docs: &Vec<Document>) {
 		}
 	}
 
+    let mut results: Vec<(&&str, &f32)> = results.iter().collect();
+    results.sort_by(|a,b| b.1.total_cmp(a.1));
+    
 	let mut res_vec: Vec<String> = Vec::new();
 	for (k, tf_idf) in results.iter() {
 		let mut res = "".to_owned();
