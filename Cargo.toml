@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 tiny_http = "0.12"
 rusqlite = { version = "0.29.0", features = ["bundled"] }
-poppler-rs = "0.21.0"
+poppler-rs = "0.22.0"

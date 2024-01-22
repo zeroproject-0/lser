@@ -10,14 +10,14 @@ impl<'a> Lexer<'a> {
 	}
 
 	fn trim_left(&mut self) {
-		while self.content.len() > 0 && !self.content[0].is_alphanumeric() {
+		while !self.content.is_empty() && !self.content[0].is_alphanumeric() {
 			self.content = &self.content[1..];
 		}
 	}
 
 	pub fn next_token(&mut self) -> Option<String> {
 		self.trim_left();
-		if self.content.len() == 0 {
+		if self.content.is_empty() {
 			return None;
 		}
 

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs::{read_dir, read_to_string, File, ReadDir};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::commons::{exit_error, Lexer};
 use crate::database::models::doc_word::DbDocWordToSave;
@@ -104,7 +104,7 @@ impl Document {
 	}
 }
 
-pub fn index_from_str(text: &str, path: &PathBuf) -> Option<Document> {
+pub fn index_from_str(text: &str, path: &Path) -> Option<Document> {
 	let doc = Document::new(text, path.to_path_buf());
 
 	if doc.count_words == 0 {
@@ -118,7 +118,7 @@ pub fn index_from_str(text: &str, path: &PathBuf) -> Option<Document> {
 	Some(doc)
 }
 
-pub fn is_valid_file(path: &PathBuf) -> bool {
+pub fn is_valid_file(path: &Path) -> bool {
 	let files_types = vec!["pdf", "txt"];
 	let file_extension = path.extension();
 
@@ -149,9 +149,9 @@ pub fn extract_pdf(path: &PathBuf) -> Option<String> {
 
 	let n = pdf.n_pages();
 	for i in 0..n {
-		let page = pdf.page(i).expect(&format!(
-			"{i} is within the bounds of the range of the page"
-		));
+		let page = pdf
+			.page(i)
+			.unwrap_or_else(|| panic!("{i} is within the bounds of the range of the page"));
 		if let Some(content) = page.text() {
 			result.push_str(content.as_str());
 			result.push(' ');
@@ -185,11 +185,9 @@ pub fn calc_idf(term: &str, docs: &Vec<Document>) -> f32 {
 			appears += 1;
 		}
 	}
-	let semi = total_documents as f32 / (appears as f32);
+	let semi = total_documents / (appears as f32);
 
-	let res = semi.log10().max(1f32);
-
-	res
+	semi.log10().max(1f32)
 }
 
 pub fn extract(dir: ReadDir, docs: &mut Vec<Document>) {
@@ -199,26 +197,24 @@ pub fn extract(dir: ReadDir, docs: &mut Vec<Document>) {
 
 		if item.is_dir() {
 			extract(read_dir(&item).unwrap(), docs);
-		} else {
-			if is_valid_file(&item) {
-				let content = match item.extension().unwrap().to_str().unwrap() {
-					"pdf" => extract_pdf(&item),
-					"txt" => extract_txt(&item),
-					_ => None,
-				};
-
-				let doc: Option<Document> = match content {
-					Some(content) => index_from_str(&content, &item),
-					None => None,
-				};
-
-				if let Some(doc) = doc {
-					println!("success!!!");
-					docs.push(doc);
-				} else {
-					println!("Can't get content from: {}", item.display());
-				}
+		} else if is_valid_file(&item) {
+			let content = match item.extension().unwrap().to_str().unwrap() {
+				"pdf" => extract_pdf(&item),
+				"txt" => extract_txt(&item),
+				_ => None,
 			};
+
+			let doc: Option<Document> = match content {
+				Some(content) => index_from_str(&content, &item),
+				None => None,
+			};
+
+			if let Some(doc) = doc {
+				println!("success!!!");
+				docs.push(doc);
+			} else {
+				println!("Can't get content from: {}", item.display());
+			}
 		}
 	}
 }

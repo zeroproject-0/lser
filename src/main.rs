@@ -8,7 +8,7 @@ use lser::commons::exit_error;
 fn main() {
 	let mut args: VecDeque<String> = env::args().skip(1).collect();
 
-	if args.len() == 0 {
+	if args.is_empty() {
 		exit_error("0 arguments provided");
 	}
 
