@@ -8,17 +8,17 @@ pub struct DbWord {
 
 impl ToQuery for DbWord {
 	fn to_query(&self) -> String {
-		String::from(format!(
+		format!(
 			"INSERT INTO T_WORD (word, apparitions) VALUES (\"{}\", {}) ON CONFLICT (word) DO UPDATE SET apparitions = + 1",
 			self.word, self.apparitions
-		))
+		)
 	}
 
 	fn to_mult_query(&self) -> String {
-		String::from(format!("(\"{}\", {})", self.word, self.apparitions))
+		format!("(\"{}\", {})", self.word, self.apparitions)
 	}
 
 	fn fields(&self) -> String {
-		String::from(format!("(word, apparitions)"))
+		"(word, apparitions)".to_string()
 	}
 }

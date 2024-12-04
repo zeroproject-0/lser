@@ -119,7 +119,7 @@ pub fn index_from_str(text: &str, path: &Path) -> Option<Document> {
 }
 
 pub fn is_valid_file(path: &Path) -> bool {
-	let files_types = vec!["pdf", "txt"];
+	let files_types = ["pdf", "txt"];
 	let file_extension = path.extension();
 
 	match file_extension {

@@ -11,37 +11,37 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use super::index::Document;
 
 fn decode_url(url: &str) -> String {
-    let bytes = url.bytes().into_iter().collect::<Vec<u8>>();
-    let mut output = Vec::with_capacity(bytes.len());
+	let bytes = url.bytes().collect::<Vec<u8>>();
+	let mut output = Vec::with_capacity(bytes.len());
 
-    let mut i = 0;
-    while i < bytes.len()  {
-        match bytes[i] {
-            b'%' => {
-                if i + 2 < bytes.len() {
-                    let hex = &bytes[i + 1..i + 3];
-                    if let Ok(byte) = u8::from_str_radix(from_utf8(hex).unwrap(), 16) {
-                        output.push(byte);
-                        i += 3;
-                        continue;
-                    }
-                }
+	let mut i = 0;
+	while i < bytes.len() {
+		match bytes[i] {
+			b'%' => {
+				if i + 2 < bytes.len() {
+					let hex = &bytes[i + 1..i + 3];
+					if let Ok(byte) = u8::from_str_radix(from_utf8(hex).unwrap(), 16) {
+						output.push(byte);
+						i += 3;
+						continue;
+					}
+				}
 
-                output.push(b'%'); 
-                i += 1;
-            },
-            b'+' => {
-                output.push(b' ');
-                i += 1;
-            },
-            _ => {
-                output.push(bytes[i]); 
-                i += 1;
-            },
-        }
-    }
+				output.push(b'%');
+				i += 1;
+			}
+			b'+' => {
+				output.push(b' ');
+				i += 1;
+			}
+			_ => {
+				output.push(bytes[i]);
+				i += 1;
+			}
+		}
+	}
 
-    String::from_utf8(output).unwrap()
+	String::from_utf8(output).unwrap()
 }
 
 fn serve_404(req: Request) {
@@ -75,7 +75,7 @@ struct DbDocWord {
 
 fn serve_file(req: Request) {
 	let uri = decode_url(req.url());
-	let mut uri: VecDeque<&str> = uri.split("/").into_iter().skip(1).collect();
+	let mut uri: VecDeque<&str> = uri.split("/").skip(1).collect();
 
 	let file: File;
 	let content_type: &[u8];
@@ -149,10 +149,10 @@ fn handle_search(mut req: Request, db: &Connection, docs: &Vec<Document>) {
 	req
 		.as_reader()
 		.read_to_end(&mut buf)
-		.expect(format!("Error trying to parse body {}", req.url()).as_str());
+		.unwrap_or_else(|_| panic!("Error trying to parse body {}", req.url()));
 
 	let body =
-		str::from_utf8(&buf).expect(format!("Error trying to parse body {}", req.url()).as_str());
+		str::from_utf8(&buf).unwrap_or_else(|_| panic!("Error trying to parse body {}", req.url()));
 
 	let total_documents = docs.len();
 	let mut results: HashMap<&str, f32> = HashMap::new();
@@ -173,15 +173,15 @@ fn handle_search(mut req: Request, db: &Connection, docs: &Vec<Document>) {
 		}
 	}
 
-    let mut results: Vec<(&&str, &f32)> = results.iter().collect();
-    results.sort_by(|a,b| b.1.total_cmp(a.1));
-    
+	let mut results: Vec<(&&str, &f32)> = results.iter().collect();
+	results.sort_by(|a, b| b.1.total_cmp(a.1));
+
 	let mut res_vec: Vec<String> = Vec::new();
 	for (k, tf_idf) in results.iter() {
 		let mut res = "".to_owned();
-		res.push_str("{");
+		res.push('{');
 		res.push_str(&format!("\"doc\": \"{k}\", \"tf_idf\": \"{tf_idf}\""));
-		res.push_str("}");
+		res.push('}');
 		res_vec.push(res);
 		//println!("K: {k} => tf_idf: {tf_idf}");
 	}
@@ -194,11 +194,11 @@ fn handle_search(mut req: Request, db: &Connection, docs: &Vec<Document>) {
 
 fn start_server(address: SocketAddrV4) {
 	let server = Server::http(address);
-	let db = Connection::open("indexed.db").unwrap();
+	let db = Connection::open("indexed.db").unwrap_or_else(|_| panic!("Can't open database"));
 	let mut docs: Vec<Document> = Vec::new();
 	let mut stmt = db
 		.prepare("SELECT id, path, total_terms FROM T_DOCUMENT")
-		.unwrap();
+		.unwrap_or_else(|_| panic!("Can't prepare query please index the documents"));
 
 	let rows = stmt
 		.query_map([], |row| {
@@ -244,13 +244,13 @@ fn start_server(address: SocketAddrV4) {
 	match server {
 		Ok(server) => {
 			for req in server.incoming_requests() {
-                let decoded_url = decode_url(req.url());
+				let decoded_url = decode_url(req.url());
 				println!("{}", decoded_url);
 				match (req.method(), decoded_url.as_str()) {
 					(Method::Get, "/") => serve_index(req),
-					(Method::Get, ref r) if r.starts_with("/css/") && r.len() > 5 => serve_file(req),
-					(Method::Get, ref r) if r.starts_with("/js/") && r.len() > 4 => serve_file(req),
-					(Method::Get, ref r) if r.starts_with("/file/") && r.len() > 6 => serve_file(req),
+					(Method::Get, r) if r.starts_with("/css/") && r.len() > 5 => serve_file(req),
+					(Method::Get, r) if r.starts_with("/js/") && r.len() > 4 => serve_file(req),
+					(Method::Get, r) if r.starts_with("/file/") && r.len() > 6 => serve_file(req),
 					(Method::Post, "/search") => handle_search(req, &db, &docs),
 					_ => serve_404(req),
 				}

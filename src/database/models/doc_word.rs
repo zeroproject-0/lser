@@ -19,20 +19,20 @@ pub struct DbDocWord {
 
 impl ToQuery for DbDocWord {
 	fn to_query(&self) -> String {
-		String::from(format!(
+		format!(
 			"INSERT INTO T_DOC_WORD (id_doc, id_word, apparition, tf) VALUES ({}, {}, {}, {})",
 			self.id_doc, self.id_word, self.apparition, self.tf
-		))
+		)
 	}
 
 	fn to_mult_query(&self) -> String {
-		String::from(format!(
+		format!(
 			"({}, {}, {}, {})",
 			self.id_doc, self.id_word, self.apparition, self.tf
-		))
+		)
 	}
 
 	fn fields(&self) -> String {
-		String::from(format!("(id_doc, id_word, apparition, tf)"))
+		"(id_doc, id_word, apparition, tf)".to_string()
 	}
 }
