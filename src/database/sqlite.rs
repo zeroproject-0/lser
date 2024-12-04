@@ -10,8 +10,8 @@ pub struct Sqlite {
 
 impl Sqlite {
 	pub fn new(name: String) -> Self {
-		let connection =
-			Connection::open(&name).expect(&format!("Error trying to open the database: {name}"));
+		let connection = Connection::open(&name)
+			.unwrap_or_else(|_| panic!("Error trying to open the database: {name}"));
 
 		let sql = Sqlite { connection };
 		sql.create_schema();
@@ -93,7 +93,7 @@ impl DataBase for Sqlite {
 			}
 
 			q.pop();
-			q.push_str(";");
+			q.push(';');
 
 			stmt.execute_batch(&q).unwrap();
 		}
